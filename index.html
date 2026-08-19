@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <title>МЧС - Система задач</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        body {
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: #16213e;
+            padding: 30px;
+            border-radius: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #f5a623;
+            letter-spacing: 1px;
+        }
+
+        input, textarea, select, button {
+            width: 100%;
+            padding: 15px;
+            margin: 8px 0;
+            border: none;
+            border-radius: 16px;
+            font-size: 16px;
+            background: #0f3460;
+            color: white;
+        }
+
+        button {
+            background: #f5a623;
+            color: #1a1a2e;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+            button:hover {
+                background: #ffc107;
+                transform: scale(1.02);
+            }
+
+        .card {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 20px;
+            margin: 10px 0;
+            border-left: 5px solid #f5a623;
+        }
+
+        .flex {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+            .flex button {
+                flex: 1;
+            }
+
+        #telegramTestBtn {
+            background: #2ecc71;
+        }
+
+        #loginError {
+            color: #e94560;
+            margin-top: 10px;
+        }
+
+        hr {
+            margin: 20px 0;
+            border-color: #0f3460;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="app">
+        <!-- ЭКРАН ВХОДА -->
+        <div id="loginScreen">
+            <h1>🚒 МЧС. Позывной</h1>
+            <p style="text-align:center; opacity:0.7;">Введите ваш позывной для входа</p>
+            <input type="text" id="callsignInput" placeholder="Например: Начальник">
+            <button onclick="login()">Войти в систему</button>
+            <div id="loginError"></div>
+        </div>
+
+        <!-- ЭКРАН АККАУНТА -->
+        <div id="accountScreen" class="hidden">
+            <h1>👋 <span id="userFio"></span></h1>
+            <div style="background:#0f3460; padding:15px; border-radius:20px; text-align:center;">
+                <span id="userRank"></span><br>
+                <span id="userPost" style="opacity:0.8;"></span>
+            </div>
+
+            <hr>
+
+            <h3>📌 Поставить задачу</h3>
+            <select id="taskTarget">
+                <option value="all">✅ Всем сотрудникам</option>
+            </select>
+            <input type="text" id="taskText" placeholder="Описание задачи">
+            <input type="datetime-local" id="taskDeadline">
+            <select id="taskReportType">
+                <option value="photo">📸 Фотоотчет</option>
+                <option value="file">📄 Файловый отчет</option>
+            </select>
+            <button onclick="createTask()">🚀 Отправить задачу</button>
+
+            <hr>
+
+            <button id="telegramTestBtn" onclick="startTestMode()">⏱ Тест: Авто-задача каждые 5 минут</button>
+
+            <h3>📋 Мои активные задачи</h3>
+            <div id="tasksList"></div>
+        </div>
+    </div>
+
+    <script>
+        // ===================================================
+        // ВСТАВЬТЕ ВАШУ ССЫЛКУ НА WEB-ПРИЛОЖЕНИЕ
+// ===================================================
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw3qJSSyKq4ulHbIn9-mFHZNyrXlSHZyVXmSiEzCpc4yLgllmhyOStwnGU3-O81L1PQtA/exec";
+
+        let currentUser = null;
+        let testInterval = null;
+
+        // === ВХОД ===
+        window.login = async function () {
+            const cs = document.getElementById('callsignInput').value;
+            if (!cs) {
+                document.getElementById('loginError').innerText = "❌ Введите позывной!";
+                return;
+            }
+
+            try {
+                const resp = await fetch(`${SCRIPT_URL}?action=login&callsign=${encodeURIComponent(cs)}`);
+                const data = await resp.json();
+
+                if (data.status === "ok") {
+                    currentUser = data.user;
+                    document.getElementById('userFio').innerText = data.user.fio;
+                    document.getElementById('userRank').innerText = data.user.rank;
+                    document.getElementById('userPost').innerText = data.user.post;
+                    document.getElementById('loginScreen').classList.add('hidden');
+                    document.getElementById('accountScreen').classList.remove('hidden');
+                    loadTasks();
+                } else {
+                    document.getElementById('loginError').innerText = "❌ " + data.msg;
+                }
+            } catch (error) {
+                document.getElementById('loginError').innerText = "❌ Ошибка подключения к серверу!";
+                console.error(error);
+            }
+        }
+
+        // === ЗАГРУЗКА ЗАДАЧ ===
+        window.loadTasks = async function () {
+            if (!currentUser) return;
+
+            try {
+                const resp = await fetch(`${SCRIPT_URL}?action=getTasks&userId=${currentUser.id}`);
+                const tasks = await resp.json();
+                const container = document.getElementById('tasksList');
+                container.innerHTML = '';
+
+                if (tasks.length === 0) {
+                    container.innerHTML = '<p style="opacity:0.5; text-align:center;">✅ Нет активных задач</p>';
+                    return;
+                }
+
+                tasks.forEach(t => {
+                    container.innerHTML += `
+                        <div class="card">
+                            <strong>📌 ${t.text}</strong><br>
+                            ⏳ Срок: ${t.deadline.replace('T', ' ')}<br>
+                            📸 Отчет: ${t.reportType === "photo" ? "Фото" : "Файлом"}
+                            <button onclick="completeTask(${t.id})" style="margin-top:10px; background:#2ecc71; color:#000;">✅ Выполнил</button>
+                        </div>
+                    `;
+                });
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        // === СОЗДАНИЕ ЗАДАЧИ ===
+        window.createTask = async function () {
+            const text = document.getElementById('taskText').value;
+            const deadline = document.getElementById('taskDeadline').value;
+            const reportType = document.getElementById('taskReportType').value;
+            const target = document.getElementById('taskTarget').value;
+            const to = target === "all" ? "0" : target;
+
+            if (!text || !deadline) {
+                alert("❌ Заполните текст и срок задачи!");
+                return;
+            }
+
+            try {
+                const resp = await fetch(`${SCRIPT_URL}?action=newTask&from=${currentUser.id}&to=${to}&text=${encodeURIComponent(text)}&deadline=${encodeURIComponent(deadline)}&reportType=${reportType}`);
+                const data = await resp.json();
+
+                if (data.status === "ok") {
+                    alert("✅ Задача успешно поставлена!");
+                    document.getElementById('taskText').value = '';
+                    document.getElementById('taskDeadline').value = '';
+                    loadTasks();
+                } else {
+                    alert("❌ Ошибка при создании задачи");
+                }
+            } catch (error) {
+                alert("❌ Ошибка подключения!");
+                console.error(error);
+            }
+        }
+
+        // === ВЫПОЛНЕНИЕ ЗАДАЧИ ===
+        window.completeTask = async function (taskId) {
+            const report = prompt("Введите текст отчета или ссылку на файл:");
+            if (!report) return;
+
+            try {
+                await fetch(`${SCRIPT_URL}?action=completeTask&taskId=${taskId}&userId=${currentUser.id}&reportText=${encodeURIComponent(report)}`);
+                alert("✅ Отчет отправлен руководителю!");
+                loadTasks();
+            } catch (error) {
+                alert("❌ Ошибка!");
+                console.error(error);
+            }
+        }
+
+        // === ТЕСТОВЫЙ РЕЖИМ (КАЖДЫЕ 5 МИНУТ) ===
+        window.startTestMode = function () {
+            if (testInterval) {
+                clearInterval(testInterval);
+                testInterval = null;
+                document.getElementById('telegramTestBtn').innerText = '⏱ Тест: Авто-задача каждые 5 минут';
+                document.getElementById('telegramTestBtn').style.background = '#2ecc71';
+                alert("⏹ Тестовый режим ОСТАНОВЛЕН");
+                return;
+            }
+
+            document.getElementById('telegramTestBtn').innerText = '⏹ Остановить тест';
+            document.getElementById('telegramTestBtn').style.background = '#e94560';
+            alert("▶️ Тестовый режим ЗАПУЩЕН! Каждые 5 минут будет приходить задача.");
+
+            // Отправляем первую тестовую задачу
+            sendTestTask();
+            testInterval = setInterval(sendTestTask, 300000); // 300000 мс = 5 минут
+        }
+
+        async function sendTestTask() {
+            const text = `🔔 ТЕСТОВАЯ ЗАДАЧА (авто) - ${new Date().toLocaleTimeString()}`;
+            const deadline = new Date(Date.now() + 86400000).toISOString().slice(0, 16);
+
+            try {
+                await fetch(`${SCRIPT_URL}?action=newTask&from=1&to=0&text=${encodeURIComponent(text)}&deadline=${encodeURIComponent(deadline)}&reportType=photo`);
+                console.log("✅ Тестовая задача отправлена в " + new Date().toLocaleTimeString());
+                if (currentUser) loadTasks();
+            } catch (error) {
+                console.error("❌ Ошибка теста:", error);
+            }
+        }
+    </script>
+</body>
+</html>
